@@ -1,0 +1,102 @@
+ 
+  ____ _                          ____       _                       _     _
+ / ___(_)_ __ ___  _ __ ___   ___|  _ \  ___| |__  _   _  __ _  __ _| |__ | |
+| |  _| | '_ ` _ \| '_ ` _ \ / _ \ | | |/ _ \ '_ \| | | |/ _` |/ _` | '_ \| |
+| |_| | | | | | | | | | | | |  __/ |_| |  __/ |_) | |_| | (_| | (_| | | | |_|
+ \____|_|_| |_| |_|_| |_| |_|\___|____/ \___|_.__/ \__,_|\__, |\__,_|_| |_(_)
+                                                           |___/
+GimmeDebugah, a Info.plist injector.
+ 
+Copyright (c) fG!, 2013 - reverser@put.as - http://reverse.put.as All rights
+reserved.
+
+This is a small utility to inject a Info.plist into any binary with free space
+at the Mach-O header.
+
+The reason for this is that taskgated has a new default setting in Mountain
+Lion. Non-privileged binaries that want to execute task_for_pid() for arbitrary
+applications must be codesigned and have some settings in Info.plist with key
+SecTaskAccess. This is easy for bundled binaries but not for isolated binaries.
+If we are compiling from source code, the Info.plist can be embedded in the
+binary using the compiler option "--sectcreate __TEXT __info_plist
+path_to/Info.plist". This does not work if we only have a binary we want to 
+give debugging permissions to - for example python.
+
+We can work around this by injecting the required section into the binary.
+What happens is that taskgated binary is linked to the Security framework.
+This framework is responsible for reading the embedded Info.plist.
+Code located at libsecurity_codesigning/lib/machorep.cpp
+
+//
+// Extract an embedded Info.plist from the file.
+// Returns NULL if none is found.
+//
+CFDataRef MachORep::infoPlist()
+{
+        CFRef<CFDataRef> info;
+        try {
+                auto_ptr<MachO> macho(mainExecutableImage()->architecture());
+                if (const section *sect = macho->findSection("__TEXT", 
+                "__info_plist")) {
+                        if (macho->is64()) {
+                                const section_64 *sect64 = reinterpret_cast<
+                                const section_64 *>(sect);
+                                info.take(macho->dataAt(macho->flip(sect64->
+                                offset), macho->flip(sect64->size)));
+                        } else {
+                                info.take(macho->dataAt(macho->flip(sect->
+                                offset), macho->flip(sect->size)));
+                        }
+                }
+        } catch (...) {
+                secdebug("machorep", "exception reading embedded Info.plist");
+        }
+        return info.yield();
+}
+
+The framework lookups the __TEXT segment and __info_plist section and reads it.
+One way to deal with this is to inject a new segment command with the same
+__TEXT name and with the required section pointing to somewhere in the binary.
+My solution is to embedded the Info.plist also in the header free space. The
+reason for this is that codesign doesn't seem to like if we add this data to 
+the end of the binary - it will trigger some error conditions and fail to sign 
+the binary.
+
+Because the data is added in the header the target binary must be signed 
+before this util is used. Else the codesign util will see the data located 
+there and complain there is no free space to add the code signature.
+Workflow is:
+1) Sign the target binary, if it's not.
+2) Run this util against the target binary.
+3) Resign the binary to update the header's modifications.
+
+The Info.plist format should be something like this:
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple
+.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+        <key>CFBundleDevelopmentRegion</key>
+        <string>English</string>
+        <key>CFBundleIdentifier</key>
+        <string>com.apple.taskforpid</string>
+        <key>CFBundleInfoDictionaryVersion</key>
+        <string>6.0</string>
+        <key>CFBundleName</key>
+        <string>taskforpid</string>
+        <key>CFBundleVersion</key>
+        <string>1.0</string>
+        <key>SecTaskAccess</key>
+        <array>
+          <string>allowed</string>
+          <string>debug</string>
+        </array>
+</dict>
+</plist>
+
+CFBundleIdentifier and CFBundleName can be modified to target's name although 
+that's not a requirement.
+
+Have fun,
+fG!
+
