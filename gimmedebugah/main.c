@@ -36,23 +36,15 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <string.h>
 #include <stdint.h>
-#include <sys/sysctl.h>
-#include <getopt.h>
-#include <ctype.h>
+#include <limits.h>
 #include <mach-o/loader.h>
 #include <mach-o/fat.h>
-#include <stddef.h>
-#include <assert.h>
 #include <errno.h>
 #include "utlist.h"
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 #define EXTENSION ".patched"
 
 #if DEBUG
@@ -71,7 +63,7 @@ struct target_info
     struct target_info *next;
 };
 
-uint8_t *default_plist =
+uint8_t default_plist[] =
 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
 "<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
 "<plist version=\"1.0\">\n"
