@@ -71,6 +71,29 @@ struct target_info
     struct target_info *next;
 };
 
+uint8_t *default_plist =
+"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+"<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+"<plist version=\"1.0\">\n"
+"<dict>\n"
+"<key>CFBundleDevelopmentRegion</key>\n"
+"<string>English</string>\n"
+"<key>CFBundleIdentifier</key>\n"
+"<string>put.as.gimmedebugah</string>\n"
+"<key>CFBundleInfoDictionaryVersion</key>\n"
+"<string>6.0</string>\n"
+"<key>CFBundleName</key>\n"
+"<string>gimmedebugah</string>\n"
+"<key>CFBundleVersion</key>\n"
+"<string>1.0</string>\n"
+"<key>SecTaskAccess</key>\n"
+"<array>\n"
+"<string>allowed</string>\n"
+"<string>debug</string>\n"
+"</array>\n"
+"</dict>\n"
+"</plist>\n";
+
 // prototypes
 void header(void);
 void usage(void);
@@ -96,10 +119,11 @@ void
 usage(void)
 {
     fprintf(stderr, "Usage:\n");
-	fprintf(stderr,"gimmedebugah target_binary plist_file\n\n");
+	fprintf(stderr,"gimmedebugah target_binary [plist_file]\n\n");
 	fprintf(stderr,"Where: \n");
 	fprintf(stderr,"target_binary - binary to inject Info.plist\n");
-    fprintf(stderr,"plist_file    - Info.plist file to inject\n");
+    fprintf(stderr,"plist_file    - Info.plist file to inject\n\n");
+    fprintf(stderr,"Note: if no plist is specified a default one will be used\n");
 	exit(1);
 }
 
@@ -387,7 +411,7 @@ int main(int argc, const char * argv[])
     const char *target_path = argv[1];
     const char *plist_path = argv[2];
 
-    if (argc < 3) usage();
+    if (argc < 2) usage();
     
     FILE *target_file = fopen(target_path, "r");
     if (!target_file)
@@ -395,13 +419,6 @@ int main(int argc, const char * argv[])
         fprintf(stderr, "[ERROR] Can't open %s.\n", target_path);
         perror(NULL);
         exit(1);        
-    }
-    FILE *plist_file = fopen(plist_path, "r");
-    if (!plist_file)
-    {
-        fprintf(stderr, "[ERROR] Can't open %s.\n", plist_path);
-        perror(NULL);
-        exit(1);
     }
     
     uint8_t *target_buf = NULL;
@@ -415,8 +432,24 @@ int main(int argc, const char * argv[])
     }
     
     uint8_t *plist_buf = NULL;
-    uint32_t plist_size = read_file(&plist_buf, plist_file);
-    fclose(plist_file);
+    uint32_t plist_size = 0;
+    if (argc == 2)
+    {
+        plist_buf = default_plist;
+        plist_size = (uint32_t)strlen((const char*)default_plist)+1;
+    }
+    else
+    {
+        FILE *plist_file = fopen(plist_path, "r");
+        if (!plist_file)
+        {
+            fprintf(stderr, "[ERROR] Can't open %s.\n", plist_path);
+            perror(NULL);
+            exit(1);
+        }
+        plist_size = read_file(&plist_buf, plist_file);
+        fclose(plist_file);
+    }
     // verify if there's enough space to inject the plist file
     struct target_info *info = NULL;
     if (calc_header_space(target_buf, plist_size, &info))
