@@ -21,11 +21,14 @@ If we are compiling from source code, the Info.plist can be embedded in the
 binary using the compiler option "--sectcreate __TEXT __info_plist
 path_to/Info.plist". This does not work if we only have a binary we want to 
 give debugging permissions to - for example python.
+The workaround is to revert taskgated to the old procmod behavior (man 
+taskgated for detail.)
 
-We can work around this by injecting the required section into the binary.
+We can fix this by injecting the required section into the binary.
 What happens is that taskgated binary is linked to the Security framework.
 This framework is responsible for reading the embedded Info.plist.
-Code located at libsecurity_codesigning/lib/machorep.cpp
+Code located at libsecurity_codesigning/lib/machorep.cpp (Security-* package 
+from http://opensource.apple.com)
 
 //
 // Extract an embedded Info.plist from the file.
