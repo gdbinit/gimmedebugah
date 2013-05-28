@@ -107,6 +107,13 @@ follow this guide from LLDB to create the certificate, else you will run into
 annoying problems!
 https://llvm.org/svn/llvm-project/lldb/trunk/docs/code-signing.txt
 
+Two modes of operation are available:
+- Inject a new segment also called __TEXT with the required section.
+- Inject only a new section at the existing __TEXT segment.
+
+My initial prediction was that the second one wouldn't work but then I decided
+to give it a try and works without any problem. It's the default mode since
+it is cleaner than mode #1. 
 
 Have fun,
 fG!
