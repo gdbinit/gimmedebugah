@@ -7,26 +7,28 @@
                                                            |___/
 GimmeDebugah, a Info.plist injector.
  
-Copyright (c) fG!, 2013 - reverser@put.as - http://reverse.put.as All rights
-reserved.
+Copyright (c) fG!, 2013 - reverser@put.as - http://reverse.put.as 
+All rights reserved.
 
-This is a small utility to inject a Info.plist into any binary with free space
-at the Mach-O header.
+This is a small utility to inject a Info.plist into binaries with enough free
+ space at the Mach-O header.
 
 The reason for this is that taskgated has a new default setting in Mountain
 Lion. Non-privileged binaries that want to execute task_for_pid() for arbitrary
-applications must be codesigned and have some settings in Info.plist with key
-SecTaskAccess. This is easy for bundled binaries but not for isolated binaries.
-If we are compiling from source code, the Info.plist can be embedded in the
-binary using the compiler option "--sectcreate __TEXT __info_plist
-path_to/Info.plist". This does not work if we only have a binary we want to 
-give debugging permissions to - for example python.
-The workaround is to revert taskgated to the old procmod behavior (man 
-taskgated for detail.)
+applications must be codesigned and have some the SecTaskAccess key set in Info
+.plist SecTaskAccess. This is easy for bundled binaries but not for isolated 
+binaries.
+If target binary is compiled from source code, the Info.plist can be embedded 
+in the binary using the compiler option "--sectcreate __TEXT __info_plist
+path_to/Info.plist". This is not possible if we only have the a binary 
+verstion, for example, the default python install.
+One possible workaround is to revert taskgated to the old procmod behavior (
+man taskgated for details). This is marked as deprecated and who knows when 
+Apple will remove it for good.
 
 We can fix this by injecting the required section into the binary.
-What happens is that taskgated binary is linked to the Security framework.
-This framework is responsible for reading the embedded Info.plist.
+Taskgated binary is linked to the Security framework, which is responsible for 
+reading the embedded Info.plist.
 Code located at libsecurity_codesigning/lib/machorep.cpp (Security-* package 
 from http://opensource.apple.com)
 
@@ -62,7 +64,7 @@ One way to deal with this is to inject a new segment command with the same
 __TEXT name and with the required section pointing to somewhere in the binary.
 My solution is to embedded the Info.plist also in the header free space. The
 reason for this is that codesign doesn't seem to like if we add this data to 
-the end of the binary - it will trigger some error conditions and fail to sign 
+the end of the binary - it will trigger some check conditions and fail to sign 
 the binary.
 
 Because the data is added in the header the target binary must be signed 
@@ -99,6 +101,12 @@ The Info.plist format should be something like this:
 
 CFBundleIdentifier and CFBundleName can be modified to target's name although 
 that's not a requirement.
+
+If you are using a self-signed certificate to do the codesigning you need to
+follow this guide from LLDB to create the certificate, else you will run into
+annoying problems!
+https://llvm.org/svn/llvm-project/lldb/trunk/docs/code-signing.txt
+
 
 Have fun,
 fG!
