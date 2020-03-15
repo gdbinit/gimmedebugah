@@ -220,6 +220,7 @@ calc_header_space_aux(uint8_t *buffer, uint32_t plist_size, struct target_info *
     else if (mh->magic == MH_MAGIC_64)
     {
         header_size = sizeof(struct mach_header_64);
+
         new_cmds_size = (method == NEW_SEGMENT) ? sizeof(struct segment_command_64) + sizeof(struct section_64) : sizeof(struct section_64);
     }
     else
@@ -373,7 +374,7 @@ relocate_original_headers(uint8_t *buffer, struct target_info *info, uint8_t met
             /* offset is relative to start of file so we need to add it to compute the size */
             uint32_t old_cmds_size = tmp->free_offset - tmp->data_offset + tmp->header_size;
             uint8_t *src = start + tmp->data_offset;
-            uint8_t *dst = src + tmp->new_cmds_size;
+            uint8_t *dst = src + tmp->new_cmds_size * 2;
             memmove(dst, src, old_cmds_size);
             memset(src, 0, tmp->new_cmds_size);
         }
@@ -486,23 +487,44 @@ inject_plist_section(char* sectname, uint8_t *buffer, uint8_t *plist_buffer, uin
         {
             /* location of __TEXT segment command - we need to fix its size */
             struct segment_command_64 *seg_cmd64 = (struct segment_command_64*)(buffer + tmp->start_offset + tmp->text_offset);
+            printf("hey: newsect 0x%x\n", tmp->text_offset + seg_cmd64->cmdsize);
             struct section_64 *newsect = (struct section_64*)((char*)seg_cmd64 + seg_cmd64->cmdsize);
+            struct section_64 *newsect2 = (struct section_64*)((char*)newsect + sizeof(struct section_64));
+            printf("hey: newsect2 0x%x\n", tmp->text_offset + seg_cmd64->cmdsize + sizeof(struct section_64));
+
             /* and add the new section */            
-            strcpy(newsect->sectname, sectname);
+            strcpy(newsect->sectname, "__info_plist");
             strcpy(newsect->segname, "__TEXT");
+            strcpy(newsect2->sectname, "__launchd_plist");
+            strcpy(newsect2->segname, "__TEXT");
             newsect->addr = 0x100000000;
             newsect->size = plist_size;
             /* calculate the offset for the plist */
-            uint32_t new_free_offset = align_plist_offset(tmp->free_offset + tmp->new_cmds_size);
+            uint32_t new_free_offset = align_plist_offset(tmp->free_offset + tmp->new_cmds_size * 2);
             /* set the plist offset and copy it */
             newsect->offset = new_free_offset;
             LOG_DEBUG("[DEBUG] plist offset %x align %x\n", newsect->offset, newsect->align);
             uint8_t *start = buffer + tmp->start_offset + new_free_offset;
             memcpy(start, plist_buffer, plist_size);
             /* and finally fix all the sizes and number of commands/sections */
-            seg_cmd64->cmdsize += tmp->new_cmds_size;
-            seg_cmd64->nsects += 1;
-            mh->sizeofcmds += tmp->new_cmds_size;
+            seg_cmd64->cmdsize += tmp->new_cmds_size * 2;
+            seg_cmd64->nsects += 2;
+            printf("mh->sizeofcmds: 0x%x, tmp->new_cmds_size: 0x%x\n", mh->sizeofcmds, tmp->new_cmds_size);
+            mh->sizeofcmds += tmp->new_cmds_size * 2;
+            printf("mh->sizeofcmds: 0x%x, tmp->new_cmds_size: 0x%x\n", mh->sizeofcmds, tmp->new_cmds_size);
+            new_free_offset = align_plist_offset(new_free_offset + plist_size);
+                        
+            FILE *plist_file = fopen("helper-Launchd.plist", "r");
+            plist_size = read_file(&plist_buffer, plist_file);
+            printf("Launchd.plistsize: %d\n", plist_size);
+            fclose(plist_file);
+            newsect2->addr = 0x100000000;
+            newsect2->size = plist_size;
+            newsect2->offset = new_free_offset;
+            LOG_DEBUG("[DEBUG] plist offset %x align %x\n", newsect2->offset, newsect2->align);
+            start = buffer + tmp->start_offset + new_free_offset;
+            memcpy(start, plist_buffer, plist_size);
+            tmp->free_offset = align_plist_offset(new_free_offset + plist_size);
         }
     }
     return 0;
@@ -513,8 +535,8 @@ int main(int argc, const char * argv[])
     header();
     int c;
     uint8_t method = NEW_SECTION; // default is to add the new section
-    const char *target_path = NULL;
-    const char *plist_path = NULL;
+    const char *target_path = "helper";
+    const char *plist_path = "helper-Info.plist";
     char *sectname = "__info_plist";
     
     opterr = 0;
@@ -540,15 +562,15 @@ int main(int argc, const char * argv[])
         }
     }
 
-    if (optind < argc)
-    {
-        target_path = argv[optind];
-    }
-    else
-    {
-        usage();
-        exit(1);
-    }
+//    if (optind < argc)
+//    {
+//        target_path = argv[optind];
+//    }
+//    else
+//    {
+//        usage();
+//        exit(1);
+//    }
     
     FILE *target_file = fopen(target_path, "r");
     if (!target_file)
@@ -595,12 +617,15 @@ int main(int argc, const char * argv[])
         exit(1);
     }
     
+    printf("before hey: 0x%x\n", info->free_offset);
+
     /* we have free space so we can do our job! */
     relocate_original_headers(target_buf, info, method);
     if (method == NEW_SECTION)
         inject_plist_section(sectname, target_buf, plist_buf, plist_size, info);
     else
         inject_plist_segment(sectname, target_buf, plist_buf, plist_size, info);
+    printf("after hey: 0x%x\n", info->free_offset);
     
     /* build output filename */
     size_t output_size = strlen(target_path) + strlen(EXTENSION) + 1;
