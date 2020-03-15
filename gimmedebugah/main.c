@@ -98,8 +98,8 @@ void usage(void);
 static int calc_header_space(uint8_t *buffer, uint32_t plist_size, struct target_info **info, uint8_t method);
 static int calc_header_space_aux(uint8_t *buffer, uint32_t plist_size, struct target_info *info, uint8_t method);
 static int relocate_original_headers(uint8_t *buffer, struct target_info *info, uint8_t method);
-static int inject_plist_segment(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size, struct target_info *info);
-static int inject_plist_section(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size, struct target_info *info);
+static int inject_plist_segment(char* sectname, uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size, struct target_info *info);
+static int inject_plist_section(char* sectname, uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size, struct target_info *info);
 
 void
 header(void)
@@ -385,7 +385,7 @@ relocate_original_headers(uint8_t *buffer, struct target_info *info, uint8_t met
  * add the new commands to the header and copy the plist into the free header space
  */
 static int
-inject_plist_segment(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size, struct target_info *info)
+inject_plist_segment(char* sectname, uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size, struct target_info *info)
 {
     struct target_info *tmp = NULL;
     // new headers
@@ -409,7 +409,7 @@ inject_plist_segment(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size
             newseg->nsects = 1;
             /* and the section */
             struct section *newsect = (struct section*)((char*)newseg + sizeof(struct segment_command));
-            strcpy(newsect->sectname, "__info_plist");
+            strcpy(newsect->sectname, sectname);
             strcpy(newsect->segname, "__TEXT");
             newsect->addr = 0x1000;
             newsect->size = plist_size;
@@ -435,7 +435,7 @@ inject_plist_segment(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size
             newseg64->initprot = VM_PROT_READ | VM_PROT_EXECUTE;
             newseg64->nsects = 1;
             struct section_64 *newsect64 = (struct section_64*)((char*)newseg64 + sizeof(struct segment_command_64));
-            strcpy(newsect64->sectname, "__info_plist");
+            strcpy(newsect64->sectname, sectname);
             strcpy(newsect64->segname, "__TEXT");            
             newsect64->addr = 0x100000000;
             newsect64->size = plist_size;
@@ -454,7 +454,7 @@ inject_plist_segment(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size
  * add only the new section to the already existing __TEXT segment
  */
 static int
-inject_plist_section(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size, struct target_info *info)
+inject_plist_section(char* sectname, uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size, struct target_info *info)
 {
     struct target_info *tmp = NULL;
     LL_FOREACH(info, tmp)
@@ -467,7 +467,7 @@ inject_plist_section(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size
             /* the location of the new section */
             struct section *newsect = (struct section*)((char*)seg_cmd + seg_cmd->cmdsize);
             /* and add the new section */
-            strcpy(newsect->sectname, "__info_plist");
+            strcpy(newsect->sectname, sectname);
             strcpy(newsect->segname, "__TEXT");
             newsect->addr = 0x1000;
             newsect->size = plist_size;
@@ -488,7 +488,7 @@ inject_plist_section(uint8_t *buffer, uint8_t *plist_buffer, uint32_t plist_size
             struct segment_command_64 *seg_cmd64 = (struct segment_command_64*)(buffer + tmp->start_offset + tmp->text_offset);
             struct section_64 *newsect = (struct section_64*)((char*)seg_cmd64 + seg_cmd64->cmdsize);
             /* and add the new section */            
-            strcpy(newsect->sectname, "__info_plist");
+            strcpy(newsect->sectname, sectname);
             strcpy(newsect->segname, "__TEXT");
             newsect->addr = 0x100000000;
             newsect->size = plist_size;
@@ -515,9 +515,10 @@ int main(int argc, const char * argv[])
     uint8_t method = NEW_SECTION; // default is to add the new section
     const char *target_path = NULL;
     const char *plist_path = NULL;
+    char *sectname = "__info_plist";
     
     opterr = 0;
-    while ((c = getopt(argc, (char * const*)argv, "p:m")) != -1)
+    while ((c = getopt(argc, (char * const*)argv, "s:p:m")) != -1)
     {
         switch (c) {
             case 'p':
@@ -525,6 +526,9 @@ int main(int argc, const char * argv[])
                 break;
             case 'm':
                 method = NEW_SEGMENT;
+                break;
+            case 's':
+                sectname = optarg;
                 break;
             case 'h':
             case '?':
@@ -594,9 +598,9 @@ int main(int argc, const char * argv[])
     /* we have free space so we can do our job! */
     relocate_original_headers(target_buf, info, method);
     if (method == NEW_SECTION)
-        inject_plist_section(target_buf, plist_buf, plist_size, info);
+        inject_plist_section(sectname, target_buf, plist_buf, plist_size, info);
     else
-        inject_plist_segment(target_buf, plist_buf, plist_size, info);
+        inject_plist_segment(sectname, target_buf, plist_buf, plist_size, info);
     
     /* build output filename */
     size_t output_size = strlen(target_path) + strlen(EXTENSION) + 1;
